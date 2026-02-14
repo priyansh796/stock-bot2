@@ -2,6 +2,7 @@ name: Stock Bot Scheduler
 
 on:
   workflow_dispatch:
+
   schedule:
     - cron: '0 4 * * 1'      # Every Monday
     - cron: '0 4 1 * *'      # 1st of every month
@@ -11,9 +12,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Repo
+        uses: actions/checkout@v4
 
-      - name: Install Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
