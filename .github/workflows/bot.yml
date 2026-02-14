@@ -2,10 +2,9 @@ name: Stock Bot Scheduler
 
 on:
   workflow_dispatch:
-
   schedule:
-    - cron: '0 4 * * 1'      # Every Monday
-    - cron: '0 4 1 * *'      # 1st of every month
+    - cron: '0 4 * * 1'   # Every Monday
+    - cron: '0 4 1 * *'   # 1st of every month
 
 jobs:
   run-bot:
@@ -23,12 +22,20 @@ jobs:
       - name: Install Libraries
         run: pip install yfinance pandas numpy ta openpyxl
 
+      # ✅ VERY IMPORTANT DEBUG STEP
+      - name: Debug files before run
+        run: ls
+
       - name: Run Bot
         run: python stock_bot_monthly.py
+
+      # ✅ DEBUG AGAIN (shows portfolio.xlsx exists)
+      - name: Debug files after run
+        run: ls
+
+      # ✅ EXACT FILENAME (CRITICAL FIX)
       - name: Upload Excel File
         uses: actions/upload-artifact@v4
         with:
           name: bot-output
-          path: "*.xlsx"
-  
-
+          path: portfolio.xlsx
