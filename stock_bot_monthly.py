@@ -145,12 +145,20 @@ for stock in sell_signals:
         signals.append([stock, "SELL"])
 
 
-signals_df = pd.DataFrame(signals, columns=["Stock", "Signal"])
+signals_df = pd.DataFrame(signals if signals else [["NONE", "NO SIGNAL"]],
+                          columns=["Stock", "Signal"])
 
+if portfolio_df.empty:
+    portfolio_df = pd.DataFrame([["NONE", "EMPTY"]],
+                                columns=["Stock", "Status"])
 
-# ================= WRITE EXCEL =================
 with pd.ExcelWriter(PORTFOLIO_FILE, engine="openpyxl", mode="w") as writer:
     portfolio_df.to_excel(writer, sheet_name="Portfolio", index=False)
     signals_df.to_excel(writer, sheet_name="Signals", index=False)
 
+print("portfolio.xlsx force-created")
+
+    signals_df.to_excel(writer, sheet_name="Signals", index=False)
+
 print("Excel file updated successfully.")
+
