@@ -2,7 +2,6 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 from ta.momentum import RSIIndicator
-from openpyxl import load_workbook
 import os
 
 MARKET_CAP_LIMIT = 5000 * 10**7
@@ -30,135 +29,100 @@ def super_smoother(price, period):
     return filt
 
 
-# ================= LOAD STOCK LIST =================
-stocks_df = pd.read_csv("nse_stocks.csv")
-symbols = stocks_df['SYMBOL'].dropna().tolist()
-stocks = [symbol + ".NS" for symbol in symbols]
+def load_portfolio():
+    if os.path.exists(PORTFOLIO_FILE):
+        try:
+            df = pd.read_excel(PORTFOLIO_FILE, sheet_name="Portfolio")
+            return df
+        except:
+            pass
 
-weekly_buy = []
-monthly_buy = []
-sell_signals = []
+    return pd.DataFrame(columns=["Stock", "Status"])
 
 
-# ================= SIGNAL GENERATION =================
-for stock in stocks:
+def main():
 
-    print(f"Processing {stock} ...")
+    stocks = pd.read_csv("nse_stocks.csv")
 
-    try:
-        ticker = yf.Ticker(stock)
-        info = ticker.info
+    portfolio_df = load_portfolio()
+    owned_stocks = set(portfolio_df["Stock"])
 
-        market_cap = info.get("marketCap", None)
-        if market_cap is None or market_cap < MARKET_CAP_LIMIT:
-            continue
+    weekly_buy = []
+    monthly_buy = []
+    sell_signals = []
 
-        monthly_df = ticker.history(period=MONTHLY_HISTORY, interval="1mo")
-        if len(monthly_df) < 260:
-            continue
+    signals = []
 
-        m_close = monthly_df['Close'].values
+    for symbol in stocks["Symbol"]:
 
-        monthly_df['SSF_50'] = super_smoother(m_close, 50)
-        monthly_df['SSF_100'] = super_smoother(m_close, 100)
-        monthly_df['SSF_250'] = super_smoother(m_close, 250)
+        ticker = f"{symbol}.NS"
+        print(f"Processing {ticker} ...")
 
-        m_latest = monthly_df.iloc[-1]
-        m_prev = monthly_df.iloc[-2]
+        try:
+            stock = yf.Ticker(ticker)
+            info = stock.info
 
-        monthly_below_count = sum([
-            m_prev['Close'] < m_prev['SSF_50'],
-            m_prev['Close'] < m_prev['SSF_100'],
-            m_prev['Close'] < m_prev['SSF_250']
-        ])
+            market_cap = info.get("marketCap")
 
-        monthly_cross = (
-            m_prev['Close'] < m_prev['SSF_50']
-            and m_latest['Close'] > m_latest['SSF_50']
+            if market_cap is None or market_cap < MARKET_CAP_LIMIT:
+                continue
+
+            hist = stock.history(period=MONTHLY_HISTORY)
+
+            if hist.empty:
+                continue
+
+            close = hist["Close"].values
+
+            smooth = super_smoother(close, 10)
+
+            rsi = RSIIndicator(pd.Series(close), window=14).rsi()
+
+            if smooth[-1] > smooth[-2] and rsi.iloc[-1] < 30:
+                monthly_buy.append(symbol)
+
+            if smooth[-1] < smooth[-2] and rsi.iloc[-1] > 70:
+                sell_signals.append(symbol)
+
+        except Exception as e:
+            print("Error:", e)
+
+    # ================= SIGNAL GENERATION =================
+
+    for stock in monthly_buy:
+        if stock not in owned_stocks:
+            signals.append([stock, "BUY"])
+            portfolio_df.loc[len(portfolio_df)] = [stock, "OWNED"]
+
+    for stock in sell_signals:
+        if stock in owned_stocks:
+            signals.append([stock, "SELL"])
+            portfolio_df = portfolio_df[portfolio_df["Stock"] != stock]
+
+    # ================= DATA SAFETY (VERY IMPORTANT) =================
+
+    signals_df = pd.DataFrame(
+        signals if signals else [["NONE", "NO SIGNAL"]],
+        columns=["Stock", "Signal"]
+    )
+
+    if portfolio_df.empty:
+        portfolio_df = pd.DataFrame(
+            [["NONE", "EMPTY"]],
+            columns=["Stock", "Status"]
         )
 
-        if monthly_below_count >= 2 and monthly_cross:
-            monthly_buy.append(stock)
+    # ================= WRITE EXCEL (INDENTATION SAFE) =================
 
-        weekly_df = ticker.history(period=WEEKLY_HISTORY, interval="1wk")
-        if len(weekly_df) < 260:
-            continue
+    with pd.ExcelWriter(PORTFOLIO_FILE, engine="openpyxl", mode="w") as writer:
+        portfolio_df.to_excel(writer, sheet_name="Portfolio", index=False)
+        signals_df.to_excel(writer, sheet_name="Signals", index=False)
 
-        w_close = weekly_df['Close'].values
-
-        weekly_df['SSF_50'] = super_smoother(w_close, 50)
-        weekly_df['SSF_100'] = super_smoother(w_close, 100)
-        weekly_df['SSF_250'] = super_smoother(w_close, 250)
-
-        w_latest = weekly_df.iloc[-1]
-        w_prev = weekly_df.iloc[-2]
-
-        weekly_below_count = sum([
-            w_prev['Close'] < w_prev['SSF_50'],
-            w_prev['Close'] < w_prev['SSF_100'],
-            w_prev['Close'] < w_prev['SSF_250']
-        ])
-
-        weekly_cross = (
-            w_prev['Close'] < w_prev['SSF_50']
-            and w_latest['Close'] > w_latest['SSF_50']
-        )
-
-        if weekly_below_count >= 2 and weekly_cross:
-            weekly_buy.append(stock)
-
-        rsi = RSIIndicator(monthly_df['Close'], window=14)
-        monthly_df['RSI'] = rsi.rsi()
-        monthly_df['RSI_MA'] = monthly_df['RSI'].rolling(14).mean()
-
-        rsi_prev = monthly_df.iloc[-2]
-        rsi_latest = monthly_df.iloc[-1]
-
-        if rsi_prev['RSI'] > rsi_prev['RSI_MA'] and rsi_latest['RSI'] < rsi_latest['RSI_MA']:
-            sell_signals.append(stock)
-
-    except Exception:
-        continue
+    print("portfolio.xlsx force-created")
 
 
-# ================= PORTFOLIO MEMORY =================
-
-if os.path.exists(PORTFOLIO_FILE):
-    portfolio_df = pd.read_excel(PORTFOLIO_FILE, sheet_name="Portfolio")
-    owned_stocks = set(portfolio_df['Stock'])
-else:
-    portfolio_df = pd.DataFrame(columns=["Stock", "Status"])
-    owned_stocks = set()
-
-signals = []
-
-# BUY LOGIC → add if not owned
-for stock in weekly_buy + monthly_buy:
-    if stock not in owned_stocks:
-        portfolio_df.loc[len(portfolio_df)] = [stock, "OWNED"]
-        signals.append([stock, "BUY"])
-
-# SELL LOGIC → only if owned
-for stock in sell_signals:
-    if stock in owned_stocks:
-        portfolio_df = portfolio_df[portfolio_df['Stock'] != stock]
-        signals.append([stock, "SELL"])
+if __name__ == "__main__":
+    main()
 
 
-signals_df = pd.DataFrame(signals if signals else [["NONE", "NO SIGNAL"]],
-                          columns=["Stock", "Signal"])
-
-if portfolio_df.empty:
-    portfolio_df = pd.DataFrame([["NONE", "EMPTY"]],
-                                columns=["Stock", "Status"])
-
-with pd.ExcelWriter(PORTFOLIO_FILE, engine="openpyxl", mode="w") as writer:
-    portfolio_df.to_excel(writer, sheet_name="Portfolio", index=False)
-    signals_df.to_excel(writer, sheet_name="Signals", index=False)
-
-print("portfolio.xlsx force-created")
-
-    signals_df.to_excel(writer, sheet_name="Signals", index=False)
-
-print("Excel file updated successfully.")
 
