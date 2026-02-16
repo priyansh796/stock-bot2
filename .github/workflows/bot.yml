@@ -22,18 +22,28 @@ jobs:
       - name: Install Libraries
         run: python -m pip install yfinance pandas numpy ta openpyxl
 
-      - name: Debug files before run
-        run: ls
+      # ✅ DEFINITIVE DEBUG (before run)
+      - name: Debug files BEFORE run
+        run: |
+          echo "WORKING DIRECTORY:"
+          pwd
+          echo "FILES:"
+          ls -la
 
       - name: Run Bot
         run: python stock_bot_monthly.py
 
-      - name: Debug files after run
-        run: ls
+      # ✅ DEFINITIVE DEBUG (after run)
+      - name: Debug files AFTER run
+        run: |
+          echo "WORKING DIRECTORY:"
+          pwd
+          echo "FILES:"
+          ls -la
 
+      # ✅ RELIABLE ARTIFACT UPLOAD
       - name: Upload Excel File
         uses: actions/upload-artifact@v4
         with:
           name: bot-output
-          path: ./portfolio.xlsx
-
+          path: portfolio.xlsx
