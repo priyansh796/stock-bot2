@@ -1,4 +1,4 @@
-name: Stock Bot Scheduler
+name: Stock Bot Scheduler V2
 
 on:
   workflow_dispatch:
